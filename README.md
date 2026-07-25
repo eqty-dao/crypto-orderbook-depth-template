@@ -350,8 +350,71 @@ If no URL parameters are present, the dashboard uses the configured defaults.
 | Exchange | Status | Notes |
 |---|---|---|
 | Gate.io | Stable | Works directly through the Cloudflare Worker. |
-| Binance | Stable | Uses Binance public market-data endpoints with fallback URLs. |
-| KuCoin | Best effort | Direct Cloudflare Worker → KuCoin requests may be rate-limited by KuCoin. For reliable KuCoin support, set `KUCOIN_PROXY_URL`. |
+| Binance | Stable | Uses Binance public market-data fallback endpoints. |
+| KuCoin | Best effort | Direct mode may be rate-limited by KuCoin. For reliable support, deploy the included `kucoin-proxy/` service and set `KUCOIN_PROXY_URL`. |
+
+---
+
+## Optional KuCoin Render Proxy
+
+KuCoin may rate-limit shared Cloudflare Worker egress IPs. If this happens, KuCoin requests through the default Cloudflare Worker can fail with errors like:
+
+```json
+{
+  "code": "429000",
+  "msg": "Too many requests. User-level rate limit exceeded."
+}
+```
+
+This template includes an optional KuCoin proxy in:
+
+```text
+kucoin-proxy/
+```
+
+The proxy exposes:
+
+```text
+GET /health
+GET /orderbook?pair=BTC-USDT&limit=20
+GET /markets
+```
+
+Deploy with Render Blueprint
+
+The repo includes a root-level render.yaml.
+
+In Render:
+
+```text
+New → Blueprint → connect this repo → deploy
+```
+
+Render will deploy the kucoin-proxy/ folder as a Node web service.
+
+Deploy manually as a Render Web Service
+
+Use these settings:
+
+```text
+Root Directory: kucoin-proxy
+Build Command:  npm install
+Start Command:  npm start
+```
+
+After deployment, Render gives you a URL like:
+
+```text
+https://your-kucoin-proxy.onrender.com
+```
+
+Add that URL to your Cloudflare Worker config (or in wrangler.toml):
+
+```text
+KUCOIN_PROXY_URL=https://your-kucoin-proxy.onrender.com
+```
+
+The frontend still calls the main Cloudflare Worker. The Worker decides whether KuCoin requests go directly to KuCoin or through the optional Render proxy.
 
 ---
 
