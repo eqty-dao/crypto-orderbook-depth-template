@@ -9,3 +9,4 @@ DEFAULT_PAIR = "EQTY_USDT"
 # Use "*" for easiest setup. For production, set your own origin, e.g. "https://YOURUSER.github.io".
 ALLOWED_ORIGINS = "*"
 ALLOW_DIRECT = "true"
+KUCOIN_PROXY_URL = ""
