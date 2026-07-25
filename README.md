@@ -398,6 +398,7 @@ Use these settings:
 
 ```text
 Root Directory: kucoin-proxy
+Region:         Frankfurt
 Build Command:  npm install
 Start Command:  npm start
 ```
