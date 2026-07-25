@@ -282,6 +282,7 @@ DEFAULT_EXCHANGE = "gate"
 DEFAULT_PAIR = "EQTY_USDT"
 ALLOWED_ORIGINS = "*"
 ALLOW_DIRECT = "true"
+KUCOIN_PROXY_URL = ""
 ```
 
 For production, consider restricting origins:
@@ -293,6 +294,20 @@ ALLOWED_ORIGINS = "https://YOURUSER.github.io,http://localhost:8080"
 This blocks browser JavaScript from unknown origins before the Worker fetches exchange data.
 
 CORS is not a complete anti-abuse mechanism. For stronger protection, use Cloudflare rate limiting, caching, WAF rules, or per-IP throttling.
+
+---
+
+## Optional Worker Variables
+
+These variables are configured on the Cloudflare Worker side, either in `wrangler.toml` under `[vars]` or in the Cloudflare dashboard under **Worker → Settings → Variables and Secrets**.
+
+| Variable | Required | Default | Description |
+|---|---:|---|---|
+| `ALLOWED_ORIGINS` | Recommended | `*` | Comma-separated list of browser origins allowed to call the Worker. Example: `https://example.com,https://owner.github.io` |
+| `ALLOW_DIRECT` | Optional | `true` | Allows direct non-browser requests such as `curl`, which usually have no `Origin` header. |
+| `DEFAULT_EXCHANGE` | Optional | `gate` | Default exchange used by the Worker if no exchange is supplied. |
+| `DEFAULT_PAIR` | Optional | `EQTY_USDT` | Default pair used by the Worker if no pair is supplied. |
+| `KUCOIN_PROXY_URL` | Optional | empty | Optional external proxy for KuCoin requests. Use this when KuCoin rate-limits Cloudflare Worker egress IPs. |
 
 ---
 
@@ -330,13 +345,13 @@ If no URL parameters are present, the dashboard uses the configured defaults.
 
 ---
 
-## Exchange support
+## Exchange Support
 
 | Exchange | Status | Notes |
 |---|---|---|
-| Gate.io | Stable | Works well through Cloudflare Worker |
-| Binance | Stable | Uses Binance public market-data fallback endpoints |
-| KuCoin | Experimental | May fail through Cloudflare Worker because KuCoin can rate-limit shared Cloudflare egress IPs |
+| Gate.io | Stable | Works directly through the Cloudflare Worker. |
+| Binance | Stable | Uses Binance public market-data endpoints with fallback URLs. |
+| KuCoin | Best effort | Direct Cloudflare Worker → KuCoin requests may be rate-limited by KuCoin. For reliable KuCoin support, set `KUCOIN_PROXY_URL`. |
 
 ---
 
