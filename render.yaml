@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: kucoin-proxy
+    runtime: node
+    rootDir: kucoin-proxy
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: CACHE_MS
+        value: 5000
+      - key: MARKETS_CACHE_MS
+        value: 3600000
