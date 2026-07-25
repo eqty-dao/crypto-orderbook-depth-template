@@ -330,6 +330,16 @@ If no URL parameters are present, the dashboard uses the configured defaults.
 
 ---
 
+## Exchange support
+
+| Exchange | Status | Notes |
+|---|---|---|
+| Gate.io | Stable | Works well through Cloudflare Worker |
+| Binance | Stable | Uses Binance public market-data fallback endpoints |
+| KuCoin | Experimental | May fail through Cloudflare Worker because KuCoin can rate-limit shared Cloudflare egress IPs |
+
+---
+
 ## License
 
 MIT
