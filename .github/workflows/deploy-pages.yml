@@ -1,0 +1,75 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  deploy-pages:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare static site
+        run: |
+          rm -rf dist
+          mkdir -p dist
+          cp index.html app.js style.css site.webmanifest dist/
+          if [ -d assets ]; then cp -R assets dist/assets; fi
+          for f in favicon.ico favicon-16x16.png favicon-32x32.png apple-touch-icon.png android-chrome-192x192.png android-chrome-512x512.png; do
+            if [ -f "$f" ]; then cp "$f" dist/; fi
+          done
+
+      - name: Generate frontend config from GitHub Variables
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const cfg = {
+            siteTitle: process.env.SITE_TITLE || 'Crypto Orderbook Depth Viewer',
+            defaultExchange: process.env.DEFAULT_EXCHANGE || 'gate',
+            defaultPair: process.env.DEFAULT_PAIR || 'EQTY_USDT',
+            workerUrl: process.env.WORKER_URL || 'https://YOUR_WORKER_SUBDOMAIN.workers.dev',
+            refreshSeconds: Number(process.env.REFRESH_SECONDS || '30'),
+            depthPercent: Number(process.env.DEPTH_PERCENT || '2'),
+            defaultLimit: Number(process.env.DEFAULT_LIMIT || '100'),
+            allowUserPair: String(process.env.ALLOW_USER_PAIR || 'true') === 'true',
+            pinDefaultPair: String(process.env.PIN_DEFAULT_PAIR || 'true') === 'true'
+          };
+          fs.writeFileSync('dist/config.js', 'window.ORDERBOOK_CONFIG = ' + JSON.stringify(cfg, null, 2) + ';\n');
+          NODE
+        env:
+          SITE_TITLE: ${{ vars.SITE_TITLE }}
+          DEFAULT_EXCHANGE: ${{ vars.DEFAULT_EXCHANGE }}
+          DEFAULT_PAIR: ${{ vars.DEFAULT_PAIR }}
+          WORKER_URL: ${{ vars.WORKER_URL }}
+          REFRESH_SECONDS: ${{ vars.REFRESH_SECONDS }}
+          DEPTH_PERCENT: ${{ vars.DEPTH_PERCENT }}
+          DEFAULT_LIMIT: ${{ vars.DEFAULT_LIMIT }}
+          ALLOW_USER_PAIR: ${{ vars.ALLOW_USER_PAIR }}
+          PIN_DEFAULT_PAIR: ${{ vars.PIN_DEFAULT_PAIR }}
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5

@@ -1,0 +1,7 @@
+{
+  "name": "Crypto Orderbook Depth Viewer",
+  "short_name": "Orderbook",
+  "theme_color": "#0e0e0e",
+  "background_color": "#0e0e0e",
+  "display": "standalone"
+}

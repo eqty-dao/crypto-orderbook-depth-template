@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Orderbook Depth Viewer</title>
+<link rel="stylesheet" href="./style.css">
+<link rel="manifest" href="./site.webmanifest">
+<meta name="theme-color" content="#0e0e0e">
+</head>
+<body>
+<div id="topbar">
+  <h1 id="title">📈 Orderbook Depth</h1>
+  <span id="exchange-badge">—</span>
+  <span id="badge">◌ Loading…</span>
+  <div id="live-price">—</div>
+  <div id="cd-wrap">
+    <span id="cd-text">Next: 30s</span>
+    <div id="cd-bar-bg"><div id="cd-bar"></div></div>
+  </div>
+  <button class="btn primary" id="btn-ref">↺ Refresh now</button>
+  <button class="btn" id="btn-pause">⏸ Pause</button>
+</div>
+
+<div id="controls">
+  <label>
+    Exchange
+    <select id="exchange-select">
+      <option value="gate">Gate.io</option>
+      <option value="kucoin">KuCoin</option>
+      <option value="binance">Binance</option>
+    </select>
+  </label>
+  <label class="wide">
+    Market pair
+    <input id="pair-input" list="market-list" autocomplete="off" placeholder="EQTY_USDT">
+    <datalist id="market-list"></datalist>
+  </label>
+  <label>
+    Depth %
+    <input id="depth-input" type="number" min="0.1" max="25" step="0.1">
+  </label>
+  <label>
+    Limit
+    <select id="limit-select">
+      <option value="20">20</option>
+      <option value="50">50</option>
+      <option value="100">100</option>
+    </select>
+  </label>
+  <button class="btn primary" id="btn-load">Load market</button>
+</div>
+
+<div id="kpis">
+  <div class="kpi"><div class="kpi-l">Best Bid</div><div class="kpi-v green" id="k-bb">—</div><div class="kpi-s">Highest buyer</div></div>
+  <div class="kpi"><div class="kpi-l">Best Ask</div><div class="kpi-v red" id="k-ba">—</div><div class="kpi-s">Lowest seller</div></div>
+  <div class="kpi"><div class="kpi-l">Spread</div><div class="kpi-v amber" id="k-sp">—</div><div class="kpi-s" id="k-sp2"> </div></div>
+  <div class="kpi"><div class="kpi-l">Mid Price</div><div class="kpi-v blue" id="k-mid">—</div></div>
+  <div class="kpi"><div class="kpi-l">Visible Bid Depth</div><div class="kpi-v green" id="k-bd">—</div><div class="kpi-s" id="k-bd2"> </div></div>
+  <div class="kpi"><div class="kpi-l">Visible Ask Depth</div><div class="kpi-v red" id="k-ad">—</div><div class="kpi-s" id="k-ad2"> </div></div>
+</div>
+
+<div id="depth-cards">
+  <div class="dcard dc-up" id="depth-up">
+    <div class="dc-label">▲ +2% Ask Depth</div>
+    <div class="dc-main">—</div>
+    <div class="dc-sub">Quote needed to buy up to +2%</div>
+  </div>
+  <div class="dcard dc-down" id="depth-down">
+    <div class="dc-label">▼ -2% Bid Depth</div>
+    <div class="dc-main">—</div>
+    <div class="dc-sub">Quote liquidity available down to -2%</div>
+  </div>
+</div>
+
+<div id="books">
+  <div class="book">
+    <div class="book-head bid">▲ Bids <span class="book-sub" id="bid-tot"></span></div>
+    <div class="col-head"><span>Price</span><span>Qty</span><span>Cum quote</span><span style="text-align:right">Value</span></div>
+    <div id="bid-rows"></div>
+  </div>
+  <div class="book">
+    <div class="book-head ask">▼ Asks <span class="book-sub" id="ask-tot"></span></div>
+    <div class="col-head"><span>Price</span><span>Qty</span><span>Cum quote</span><span style="text-align:right">Value</span></div>
+    <div id="ask-rows"></div>
+  </div>
+</div>
+
+<div id="footer">Waiting for first fetch…</div>
+
+<script src="./config.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>
