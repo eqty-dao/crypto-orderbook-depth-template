@@ -1,6 +1,76 @@
 const EXCHANGES = new Set(["gate", "kucoin", "binance"]);
 const LIMITS = new Set(["5", "10", "20", "50", "100"]);
 
+const BINANCE_BASES = [
+  "https://data-api.binance.vision",
+  "https://api-gcp.binance.com",
+  "https://api1.binance.com",
+  "https://api2.binance.com",
+  "https://api3.binance.com",
+  "https://api4.binance.com",
+  "https://api.binance.com"
+];
+
+async function fetchJsonFromUrls(urls) {
+  const errors = [];
+
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url, {
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "crypto-orderbook-depth-viewer/1.0"
+        }
+      });
+
+      const text = await resp.text();
+      let body;
+
+      try {
+        body = JSON.parse(text);
+      } catch (e) {
+        errors.push({
+          url,
+          status: resp.status,
+          contentType: resp.headers.get("content-type") || "",
+          bodyStart: text.slice(0, 160)
+        });
+        continue;
+      }
+
+      if (!resp.ok) {
+        errors.push({
+          url,
+          status: resp.status,
+          body
+        });
+        continue;
+      }
+
+      return {
+        ok: true,
+        status: resp.status,
+        body,
+        url
+      };
+    } catch (e) {
+      errors.push({
+        url,
+        error: String(e && e.message ? e.message : e)
+      });
+    }
+  }
+
+  return {
+    ok: false,
+    status: 502,
+    body: {
+      error: "All upstream API endpoints failed or returned non-JSON",
+      upstreamErrors: errors.slice(0, 8)
+    }
+  };
+}
+
 function envValue(env, key, fallback = "") {
   return env && env[key] !== undefined ? String(env[key]) : fallback;
 }
@@ -61,55 +131,79 @@ function clampLimit(limit) {
 }
 
 async function fetchOrderbook(exchange, pair, limit) {
-  let url;
+  let urls;
+
   if (exchange === "gate") {
-    url = "https://api.gateio.ws/api/v4/spot/order_book" +
+    urls = [
+      "https://api.gateio.ws/api/v4/spot/order_book" +
       "?currency_pair=" + encodeURIComponent(pair) +
       "&interval=0&limit=" + encodeURIComponent(limit) +
-      "&with_id=true";
+      "&with_id=true"
+    ];
   } else if (exchange === "kucoin") {
     const endpoint = Number(limit) <= 20 ? "level2_20" : "level2_100";
-    url = "https://api.kucoin.com/api/v1/market/orderbook/" + endpoint +
-      "?symbol=" + encodeURIComponent(pair);
+    urls = [
+      "https://api.kucoin.com/api/v1/market/orderbook/" + endpoint +
+      "?symbol=" + encodeURIComponent(pair)
+    ];
   } else if (exchange === "binance") {
-    url = "https://api.binance.com/api/v3/depth" +
+    urls = BINANCE_BASES.map(base =>
+      base + "/api/v3/depth" +
       "?symbol=" + encodeURIComponent(pair) +
-      "&limit=" + encodeURIComponent(limit);
+      "&limit=" + encodeURIComponent(limit)
+    );
   } else {
     throw new Error("Unsupported exchange");
   }
 
-  const resp = await fetch(url, {
-    headers: {
-      "Accept": "application/json",
-      "User-Agent": "crypto-orderbook-depth-viewer/1.0"
-    }
-  });
-  const body = await resp.json();
-  if (!resp.ok) return { status: resp.status, body };
+  const upstream = await fetchJsonFromUrls(urls);
+
+  if (!upstream.ok) {
+    return {
+      status: upstream.status,
+      body: upstream.body
+    };
+  }
+
+  const body = upstream.body;
 
   if (exchange === "gate") {
     return {
       status: 200,
       body: {
-        exchange, pair, displayPair: displayPair(pair),
-        bids: body.bids || [], asks: body.asks || [],
+        exchange,
+        pair,
+        displayPair: displayPair(pair),
+        bids: body.bids || [],
+        asks: body.asks || [],
         timestamp: Number(body.current || body.update || Date.now()),
-        orderbookId: body.id
+        orderbookId: body.id,
+        upstreamUrl: upstream.url
       }
     };
   }
 
   if (exchange === "kucoin") {
-    if (body.code && body.code !== "200000") return { status: 502, body };
+    if (body.code && body.code !== "200000") {
+      return {
+        status: 502,
+        body
+      };
+    }
+
     const data = body.data || {};
+
     return {
       status: 200,
       body: {
-        exchange, pair, displayPair: displayPair(pair),
-        bids: data.bids || [], asks: data.asks || [],
+        exchange,
+        pair,
+        displayPair: displayPair(pair),
+        bids: data.bids || [],
+        asks: data.asks || [],
         timestamp: Number(data.time || Date.now()),
-        orderbookId: data.sequence
+        orderbookId: data.sequence,
+        upstreamUrl: upstream.url
       }
     };
   }
@@ -118,15 +212,18 @@ async function fetchOrderbook(exchange, pair, limit) {
     return {
       status: 200,
       body: {
-        exchange, pair, displayPair: displayPair(pair),
-        bids: body.bids || [], asks: body.asks || [],
+        exchange,
+        pair,
+        displayPair: displayPair(pair),
+        bids: body.bids || [],
+        asks: body.asks || [],
         timestamp: Date.now(),
-        orderbookId: body.lastUpdateId
+        orderbookId: body.lastUpdateId,
+        upstreamUrl: upstream.url
       }
     };
   }
 }
-
 async function fetchMarkets(exchange) {
   if (exchange === "gate") {
     const resp = await fetch("https://api.gateio.ws/api/v4/spot/currency_pairs", { headers: { Accept: "application/json" } });
@@ -154,19 +251,25 @@ async function fetchMarkets(exchange) {
     })).filter(m => m.id && m.tradeStatus === "tradable");
   }
 
-  if (exchange === "binance") {
-    const resp = await fetch("https://api.binance.com/api/v3/exchangeInfo", { headers: { Accept: "application/json" } });
-    const data = await resp.json();
-    const arr = data.symbols || [];
-    return arr.map(m => ({
-      exchange,
-      id: m.symbol,
-      base: m.baseAsset,
-      quote: m.quoteAsset,
-      tradeStatus: m.status
-    })).filter(m => m.id && m.tradeStatus === "TRADING");
+if (exchange === "binance") {
+  const urls = BINANCE_BASES.map(base => base + "/api/v3/exchangeInfo");
+  const upstream = await fetchJsonFromUrls(urls);
+
+  if (!upstream.ok) {
+    throw new Error("Binance markets unavailable: " + JSON.stringify(upstream.body));
   }
 
+  const data = upstream.body;
+  const arr = data.symbols || [];
+
+  return arr.map(m => ({
+    exchange,
+    id: m.symbol,
+    base: m.baseAsset,
+    quote: m.quoteAsset,
+    tradeStatus: m.status
+  })).filter(m => m.id && m.tradeStatus === "TRADING");
+}
   return [];
 }
 
