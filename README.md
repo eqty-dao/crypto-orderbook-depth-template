@@ -1,3 +1,5 @@
+<img src="./assets/screenshot_eqty.png" alt="EQTY/USDT Gate.io Orderbook Depth Viewer" width="900">
+
 # Crypto Orderbook Depth Template
 
 A reusable static dashboard template for checking **orderbook depth around the current mid price** on crypto exchanges.
