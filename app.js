@@ -27,7 +27,27 @@
   };
   const fPct = (n) => (Number(n) || 0).toFixed(2);
   const f2 = (n) => (Number(n) || 0).toFixed(2);
-  const fq = (n) => Math.round(Number(n) || 0).toLocaleString("en-US");
+  const fq = (n) => {
+  n = Number(n);
+  if (!Number.isFinite(n)) return "—";
+  if (n === 0) return "0";
+
+  const abs = Math.abs(n);
+  let maxDecimals;
+
+  if (abs >= 1000000) maxDecimals = 0;
+  else if (abs >= 1000) maxDecimals = 2;
+  else if (abs >= 100) maxDecimals = 3;
+  else if (abs >= 10) maxDecimals = 4;
+  else if (abs >= 1) maxDecimals = 5;
+  else if (abs >= 0.01) maxDecimals = 6;
+  else maxDecimals = 8;
+
+  return n.toLocaleString("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: maxDecimals
+  });
+};
   const compactQuote = (n) => {
     n = Number(n) || 0;
     if (n >= 1000000000) return (n / 1000000000).toFixed(2) + "B";
