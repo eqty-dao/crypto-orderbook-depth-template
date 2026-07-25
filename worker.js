@@ -38,15 +38,20 @@ async function fetchJsonFromUrls(urls) {
         continue;
       }
 
-      if (!resp.ok) {
-        errors.push({
-          url,
-          status: resp.status,
-          body
-        });
-        continue;
-      }
-
+if (!resp.ok) {
+  errors.push({
+    url,
+    status: resp.status,
+    headers: {
+      retryAfter: resp.headers.get("retry-after"),
+      gwLimit: resp.headers.get("gw-ratelimit-limit"),
+      gwRemaining: resp.headers.get("gw-ratelimit-remaining"),
+      gwReset: resp.headers.get("gw-ratelimit-reset")
+    },
+    body
+  });
+  continue;
+}
       return {
         ok: true,
         status: resp.status,
@@ -130,8 +135,9 @@ function clampLimit(limit) {
   return LIMITS.has(limit) ? limit : "100";
 }
 
-async function fetchOrderbook(exchange, pair, limit) {
+async function fetchOrderbook(exchange, pair, limit, env) {
   let urls;
+  let usedKucoinProxy = false;
 
   if (exchange === "gate") {
     urls = [
@@ -141,11 +147,22 @@ async function fetchOrderbook(exchange, pair, limit) {
       "&with_id=true"
     ];
   } else if (exchange === "kucoin") {
-    const endpoint = Number(limit) <= 20 ? "level2_20" : "level2_100";
-    urls = [
-      "https://api.kucoin.com/api/v1/market/orderbook/" + endpoint +
-      "?symbol=" + encodeURIComponent(pair)
-    ];
+    const kucoinProxy = envValue(env, "KUCOIN_PROXY_URL", "").replace(/\/$/, "");
+
+    if (kucoinProxy) {
+      usedKucoinProxy = true;
+      urls = [
+        kucoinProxy +
+        "/orderbook?pair=" + encodeURIComponent(pair) +
+        "&limit=" + encodeURIComponent(limit)
+      ];
+    } else {
+      const endpoint = Number(limit) <= 20 ? "level2_20" : "level2_100";
+      urls = [
+        "https://api.kucoin.com/api/v1/market/orderbook/" + endpoint +
+        "?symbol=" + encodeURIComponent(pair)
+      ];
+    }
   } else if (exchange === "binance") {
     urls = BINANCE_BASES.map(base =>
       base + "/api/v3/depth" +
@@ -158,9 +175,31 @@ async function fetchOrderbook(exchange, pair, limit) {
 
   const upstream = await fetchJsonFromUrls(urls);
 
+  if (!upstream.ok && exchange === "kucoin") {
+    const first = upstream.body && upstream.body.upstreamErrors
+      ? upstream.body.upstreamErrors[0]
+      : null;
+
+    if (first && first.status === 429) {
+      return {
+        status: 429,
+        body: {
+          error: "KuCoin rate-limited the Worker upstream IP. Try again after the reset time or set KUCOIN_PROXY_URL.",
+          exchange,
+          pair,
+          upstreamStatus: 429,
+          resetMs: first.headers && first.headers.gwReset ? Number(first.headers.gwReset) : null,
+          remaining: first.headers && first.headers.gwRemaining ? Number(first.headers.gwRemaining) : null,
+          limit: first.headers && first.headers.gwLimit ? Number(first.headers.gwLimit) : null,
+          upstream: first
+        }
+      };
+    }
+  }
+
   if (!upstream.ok) {
     return {
-      status: upstream.status,
+      status: upstream.status || 502,
       body: upstream.body
     };
   }
@@ -191,7 +230,7 @@ async function fetchOrderbook(exchange, pair, limit) {
       };
     }
 
-    const data = body.data || {};
+    const data = body.data || body;
 
     return {
       status: 200,
@@ -199,11 +238,12 @@ async function fetchOrderbook(exchange, pair, limit) {
         exchange,
         pair,
         displayPair: displayPair(pair),
-        bids: data.bids || [],
-        asks: data.asks || [],
-        timestamp: Number(data.time || Date.now()),
-        orderbookId: data.sequence,
-        upstreamUrl: upstream.url
+        bids: body.bids || data.bids || [],
+        asks: body.asks || data.asks || [],
+        timestamp: Number(body.timestamp || data.time || body.time || Date.now()),
+        orderbookId: body.orderbookId || data.sequence || body.sequence,
+        upstreamUrl: upstream.url,
+        proxied: usedKucoinProxy
       }
     };
   }
@@ -224,7 +264,8 @@ async function fetchOrderbook(exchange, pair, limit) {
     };
   }
 }
-async function fetchMarkets(exchange) {
+
+async function fetchMarkets(exchange, env) {
   if (exchange === "gate") {
     const resp = await fetch("https://api.gateio.ws/api/v4/spot/currency_pairs", { headers: { Accept: "application/json" } });
     const data = await resp.json();
@@ -238,10 +279,30 @@ async function fetchMarkets(exchange) {
     return markets;
   }
 
-  if (exchange === "kucoin") {
-    const resp = await fetch("https://api.kucoin.com/api/v1/symbols", { headers: { Accept: "application/json" } });
-    const data = await resp.json();
-    const arr = data.data || [];
+if (exchange === "kucoin") {
+  const kucoinProxy = envValue(env, "KUCOIN_PROXY_URL", "").replace(/\/$/, "");
+
+  if (kucoinProxy) {
+    const upstream = await fetchJsonFromUrls([
+      kucoinProxy + "/markets"
+    ]);
+
+    if (!upstream.ok) {
+      throw new Error("KuCoin proxy markets unavailable: " + JSON.stringify(upstream.body));
+    }
+
+    const body = upstream.body;
+
+    // Proxy may return normalized format:
+    // { markets: [...] }
+    if (Array.isArray(body.markets)) {
+      return body.markets;
+    }
+
+    // Or raw KuCoin format:
+    // { code: "200000", data: [...] }
+    const arr = body.data || [];
+
     return arr.map(m => ({
       exchange,
       id: m.symbol,
@@ -251,6 +312,18 @@ async function fetchMarkets(exchange) {
     })).filter(m => m.id && m.tradeStatus === "tradable");
   }
 
+  const resp = await fetch("https://api.kucoin.com/api/v1/symbols", { headers: { Accept: "application/json" } });
+  const data = await resp.json();
+  const arr = data.data || [];
+
+  return arr.map(m => ({
+    exchange,
+    id: m.symbol,
+    base: m.baseCurrency,
+    quote: m.quoteCurrency,
+    tradeStatus: m.enableTrading ? "tradable" : "disabled"
+  })).filter(m => m.id && m.tradeStatus === "tradable");
+}
 if (exchange === "binance") {
   const urls = BINANCE_BASES.map(base => base + "/api/v3/exchangeInfo");
   const upstream = await fetchJsonFromUrls(urls);
@@ -296,7 +369,7 @@ export default {
       }
 
       if (path === "/markets") {
-        const markets = await fetchMarkets(exchange);
+        const markets = await fetchMarkets(exchange, env);
         return json({ exchange, markets }, 200, headers);
       }
 
@@ -306,7 +379,7 @@ export default {
         if (!validatePair(pair, exchange)) {
           return json({ error: "Invalid pair format for exchange", exchange, pair }, 400, headers);
         }
-        const result = await fetchOrderbook(exchange, pair, limit);
+        const result = await fetchOrderbook(exchange, pair, limit, env);
         return json(result.body, result.status, headers);
       }
 
